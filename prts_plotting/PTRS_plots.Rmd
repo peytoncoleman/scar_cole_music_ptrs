@@ -1,0 +1,444 @@
+---
+title: "PTRS Graphing"
+author: "Peyton Coleman"
+date: "6/20/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+setwd("C:/Users/colempl1/OneDrive - VUMC/Documents/Projects/SMPC_2022/")
+library(ggplot2)
+library(ggExtra)
+library(tidyr)
+library(RColorBrewer)
+library(data.table)
+library(ggpubr)
+```
+
+```{r}
+phenos <- read.table("OM_PGS_phenos.txt", h = T)
+smrt <- read.table("OM_SMRT_PTRS_1e-6.txt", h = T)
+smrt$indiv <- stringr::str_sub(smrt$indiv, 1, -8)
+smrt05 <- read.table("OM_SMRT_PTRS_05.txt", h = T)
+smrt05$indiv <- stringr::str_sub(smrt05$indiv, 1, -8)
+me <- read.table("ME4_PTRS.txt", h = T)
+me$indiv <- stringr::str_sub(me$indiv, 1, -8)
+me05 <- read.table("OM_ME4_PTRS_05.txt", h = T)
+me05$indiv <- stringr::str_sub(me05$indiv, 1, -8)
+tissues <- read.table("tissue_names.txt")
+genlang_smrt <- read.table("OM_SMRT_PTRS_05_GENLANG.txt", h = T)
+genlang_me4 <- read.table("OM_ME4_PTRS_05_GENLANG.txt", h = T)
+genlang_smrt$indiv <- stringr::str_sub(genlang_smrt$indiv, 1, -8)
+genlang_me4$indiv <- stringr::str_sub(genlang_me4$indiv, 1, -8)
+
+```
+
+```{r smrt}
+ptrs <- merge(smrt05, me05, by = "indiv")
+ptrs_phenos <- merge(phenos, ptrs, by.x = "IID", by.y = "indiv")
+
+
+tissues2 <- tissues
+tissues$task <- "Music Engagement"
+tissues2$task <- "Rhythm Discrimination"
+tissues_df <- rbind(tissues, tissues2)
+tissues_df$se <- NA
+tissues_df$pval <- NA
+tissues_df$coef <- NA
+tissues_df_genlang <- tissues_df
+
+
+for(i in 1:nrow(tissues_df)){
+  t1 <- tissues_df$V1[i]
+  if(tissues_df$task[i] == "Music Engagement"){
+    f <- paste("scale(ME4) ~ me4_", t1, "_ptrs + scale(age) + sex + PC1 + PC2 + PC3 + PC4 + PC5", sep = "")
+  } else if(tissues_df$task[i] == "Rhythm Discrimination"){
+    f <- paste("scale(smrt_score) ~ smrt_", t1, "_ptrs + scale(age) + sex + PC1 + PC2 + PC3 + PC4 + PC5", sep = "")
+  }
+  myl <- glm(formula = f, data = ptrs_phenos)
+  Coeff <- coef(myl)[2]
+  Coeff <- format(round(Coeff, 3), nsmall = 2)
+  pVal <- coef(summary(myl))[2,4]
+  se <- summary(myl)$coefficients[2, 2]
+  tissues_df$coef[i] <- Coeff
+  tissues_df$pval[i] <- pVal
+  tissues_df$se[i] <- se
+}
+
+tissues_df$coef <- as.numeric(tissues_df$coef)
+tissues_df$se <- as.numeric(tissues_df$se)
+tissues_df$pval <- as.numeric(tissues_df$pval)
+
+```
+
+```{r}
+g1 <-ggforestplot::forestplot(
+  df = tissues_df,
+  name = V1,
+  se = se,
+  estimate = coef,
+  pvalue = pval,
+  psignif = 0.05,
+  xlab = "\u03B2",
+  width = 500,
+  colour = task
+)
+
+pdf(file = "SMRT_ME4_05.pdf", height = 5, 12)
+g1 +
+  ggtitle("Beat Synchronization PTRS Predicting \nMusicality Tasks", subtitle = "pval for association 0.05 \n covariates: age, sex, 5 PCs") +
+  scale_color_discrete(labels = c("Music Engagement", "Rhythm Discrimination"), type = brewer.pal(n=2, "Dark2")) +
+  labs(color = "Musicality Task") +
+    coord_flip() +
+  theme_classic() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), legend.position = "bottom") 
+dev.off()
+```
+
+```{r putamen}
+g2 <- ggplot(data = ptrs_phenos, aes(x = scale(me4_Brain_Putamen_basal_ganglia_ptrs), y = scale(ME4))) +
+  geom_jitter(color = "#D95F02", alpha = 0.5) +
+  geom_smooth(color = "black", method = "lm") +
+  theme_classic() +
+  xlab("") +
+  ylab("Music Engagement Score")
+
+g2 <- ggExtra::ggMarginal(g2, type = "densigram", fill = "#D95F02")  
+
+g3 <- ggplot(data = ptrs_phenos, aes(x = scale(smrt_Brain_Putamen_basal_ganglia_ptrs), y = scale(smrt_score))) +
+  geom_jitter(color = "#1B9E77", alpha = 0.5) +
+  geom_smooth(color = "black", method = "lm") +
+  theme_classic() +
+  xlab("") +
+  ylab("Rhythm Discrimination Score")
+
+g3 <- ggExtra::ggMarginal(g3, type = "densigram", fill = "#1B9E77") 
+
+putamen <- ggarrange(g2, g3)
+pdf(file = "PTRS_putamen.pdf", width = 7, height = 3)
+annotate_figure(putamen, top = "Beat Synchronization PTRS Predicting Musicality Tasks in the Putamen", bottom = "PTRS for Beat Synchronization in Putamen")
+dev.off()
+```
+
+```{r lung}
+g2 <- ggplot(data = ptrs_phenos, aes(x = scale(me4_Lung_ptrs), y = scale(ME4))) +
+  geom_jitter(color = "#D95F02", alpha = 0.5) +
+  geom_smooth(color = "black", method = "lm") +
+  theme_classic() +
+  xlab("") +
+  ylab("Music Engagement Score")
+
+g2 <- ggExtra::ggMarginal(g2, type = "densigram", fill = "#D95F02")  
+
+g3 <- ggplot(data = ptrs_phenos, aes(x = scale(smrt_Lung_ptrs), y = scale(smrt_score))) +
+  geom_jitter(color = "#1B9E77", alpha = 0.5) +
+  geom_smooth(color = "black", method = "lm") +
+  theme_classic() +
+  xlab("") +
+  ylab("Rhythm Discrimination Score")
+
+g3 <- ggExtra::ggMarginal(g3, type = "densigram", fill = "#1B9E77") 
+
+lung <- ggarrange(g2, g3)
+pdf(file = "PTRS_lung.pdf", width = 7, height = 3)
+annotate_figure(lung, top = "Beat Synchronization PTRS Predicting Musicality Tasks in the Lung", bottom = "PTRS for Beat Synchronization in the Lung")
+dev.off()
+```
+
+```{r}
+genlang_ptrs <- merge(genlang_me4, genlang_smrt, by = "indiv")
+genlang_ptrs_phenos <- merge(phenos, genlang_ptrs, by.x = "IID", by.y = "indiv")
+
+
+for(i in 1:nrow(tissues_df_genlang)){
+  t1 <- tissues_df_genlang$V1[i]
+  if(tissues_df_genlang$task[i] == "Music Engagement"){
+    f <- paste("scale(ME4) ~ me4_", t1, "_ptrs + scale(age) + sex + PC1 + PC2 + PC3 + PC4 + PC5", sep = "")
+  } else if(tissues_df_genlang$task[i] == "Rhythm Discrimination"){
+    f <- paste("scale(smrt_score) ~ smrt_", t1, "_ptrs + scale(age) + sex + PC1 + PC2 + PC3 + PC4 + PC5", sep = "")
+  }
+  myl <- glm(formula = f, data = genlang_ptrs_phenos)
+  Coeff <- coef(myl)[2]
+  Coeff <- format(round(Coeff, 3), nsmall = 2)
+  pVal <- coef(summary(myl))[2,4]
+  se <- summary(myl)$coefficients[2, 2]
+  tissues_df_genlang$coef[i] <- Coeff
+  tissues_df_genlang$pval[i] <- pVal
+  tissues_df_genlang$se[i] <- se
+}
+
+tissues_df_genlang$coef <- as.numeric(tissues_df_genlang$coef)
+tissues_df_genlang$se <- as.numeric(tissues_df_genlang$se)
+tissues_df_genlang$pval <- as.numeric(tissues_df_genlang$pval)
+```
+
+```{r}
+g1 <-ggforestplot::forestplot(
+  df = tissues_df_genlang,
+  name = V1,
+  se = se,
+  estimate = coef,
+  pvalue = pval,
+  psignif = 0.05,
+  xlab = "\u03B2",
+  width = 500,
+  colour = task
+)
+
+pdf(file = "GENLANG_SMRT_ME4_05.pdf", height = 5, width = 12)
+g1 +
+  ggtitle("Multivariate Language PTRS \nPredicting Musicality Tasks", subtitle = "pval for association 0.05 \n covariates: age, sex, 5 PCs") +
+  scale_color_discrete(labels = c("Music Engagement", "Rhythm Discrimination"), type = brewer.pal(n=2, "Dark2")) +
+  labs(color = "Musicality Task") +
+  coord_flip() +
+  theme_classic() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), legend.position = "bottom") 
+  
+dev.off()
+```
+
+
+```{r}
+prs <- read.table("clapbeat.profile", h = T)
+prs_merge <- dplyr::select(prs, c("FID", "SCORE"))
+prs_ptrs_clapbeat <- merge(prs_merge, smrt, by.x = "FID", by.y = "indiv")
+prs_ptrs_corr <- dplyr::select(prs_ptrs_clapbeat, -c("FID"))
+
+prs_ptrs_corr_scale <- sapply(prs_ptrs_corr, scale)
+M <- cor(prs_ptrs_corr_scale)
+svg(file = "corrplot_ptrs_prs.svg")
+corrplot::corrplot(M,
+                   type = "lower",
+                   tl.col = 'black',
+                   tl.cex = 0.3)
+dev.off()
+```
+
+
+```{r}
+library(psych)
+myl <- glm(genlang_ptrs_phenos$smrt_score ~ genlang_ptrs_phenos$smrt_Brain_Cortex_ptrs + scale(age) + sex + PC1 + PC2 + PC3 + PC4 + PC5, data = genlang_ptrs_phenos)
+summary(myl)
+```
+
+```{r genlang}
+#Caudate basal gang + cortex - me4 (edited) 
+
+
+
+g2 <- ggplot(data = genlang_ptrs_phenos, aes(x = scale(me4_Brain_Caudate_basal_ganglia_ptrs), y = scale(ME4))) +
+  geom_jitter(color = "#1B9E77", alpha = 0.5) +
+  geom_smooth(color = "black", method = "lm") +
+  theme_classic() +
+  xlab("Multivariate Language PTRS \nin Caudate") +
+  ylab("Music Engagement Score")
+
+g2 <- ggExtra::ggMarginal(g2, type = "densigram", fill = "#1B9E77")  
+
+g3 <- ggplot(data = genlang_ptrs_phenos, aes(x = scale(me4_Brain_Cortex_ptrs), y = scale(ME4))) +
+  geom_jitter(color = "#1B9E77", alpha = 0.5) +
+  geom_smooth(color = "black", method = "lm") +
+  theme_classic() +
+  xlab("Multivariate Language PTRS \nin Cortex") +
+  ylab("Rhythm Discrimination Score")
+
+g3 <- ggExtra::ggMarginal(g3, type = "densigram", fill = "#1B9E77") 
+
+putamen <- ggarrange(g2, g3)
+pdf(file = "PTRS_genlang_me4_caudate_cortex.pdf", width = 7, height = 3)
+annotate_figure(putamen, top = "Multivariate Language PTRS Predicting Musicality Engagement")
+dev.off()
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+Exploratory Graphs
+
+
+```{r smrt}
+smrt05_phenos <- merge(phenos, smrt05, by.x = "IID", by.y = "indiv")
+
+for(i in 1:nrow(tissues_05)){
+  t1 <- tissues_05$V1[i]
+  f <- paste("scale(smrt_score) ~ smrt_", t1, "_ptrs + scale(age) + sex + PC1 + PC2 + PC3 + PC4 + PC5", sep = "")
+  myl <- glm(formula = f, data = smrt05_phenos)
+  Coeff <- coef(myl)[2]
+  Coeff <- format(round(Coeff, 2), nsmall = 2)
+  pVal <- coef(summary(myl))[2,4]
+  se <- summary(myl)$coefficients[2, 2]
+  tissues_05$coef[i] <- Coeff
+  tissues_05$pval[i] <- pVal
+  tissues_05$se[i] <- se
+}
+
+tissues_05$coef <- as.numeric(tissues_05$coef)
+tissues_05$se <- as.numeric(tissues_05$se)
+tissues_05$pval <- as.numeric(tissues_05$pval)
+tissues_05$ptrs_pval  <- "pval.0.05"
+```
+
+
+
+
+
+```{r}
+tissues_all <- rbind(tissues, tissues_05)
+tissues_all$ptrs_pval <- as.factor(tissues_all$ptrs_pval)
+g1 <-ggforestplot::forestplot(
+  df = tissues_all,
+  name = V1,
+  se = se,
+  estimate = coef,
+  pvalue = pval,
+  psignif = 0.05,
+  xlab = "\u03B2",
+  width = 500,
+  colour = ptrs_pval
+)
+
+pdf(file = "SMRT_PTRS.pdf", height = 12)
+g1 +
+  ggtitle("Clapbeat PTRS Predicting \nRhythm Discrimination", subtitle = "covariates: age, sex, 5 PCs") +
+  scale_color_discrete(labels = c("0.05", "1e-06"), type = brewer.pal(n=2, "Dark2")) +
+  labs(color = "p-value for \nPTRS calculation")
+dev.off()
+```
+
+```{r}
+ 
+
+g1 <- ggplot(smrt_phenos, aes(x = scale(smrt_blood_ptrs), y = smrt_score)) +
+  geom_jitter(size = 1) +
+  theme_classic() +
+  geom_smooth(method = "lm") 
+  
+ggExtra::ggMarginal(g1, type = "densigram")  
+
+```
+
+```{r}
+blood <- fread("Whole_Blood_smrt.txt", h = T)
+nacc <- fread("Brain_Nucleus_accumbens_basal_ganglia_smrt.txt", h = T)
+cor <- fread("Brain_Cortex_smrt.txt", h = T)
+cer <- fread("Brain_Cerebellum_smrt.txt", h = T)
+
+
+
+blood$indiv <- stringr::str_sub(blood$indiv, 1, -8)
+blood_phenos <- merge(phenos, blood, by.x = "IID", by.y = "indiv")
+
+nacc$indiv <- stringr::str_sub(nacc$indiv, 1, -8)
+nacc_phenos <- merge(phenos, nacc, by.x = "IID", by.y = "indiv")
+
+cor$indiv <- stringr::str_sub(cor$indiv, 1, -8)
+cor_phenos <- merge(phenos, cor, by.x = "IID", by.y = "indiv")
+
+cer$indiv <- stringr::str_sub(cer$indiv, 1, -8)
+cer_phenos <- merge(phenos, cer, by.x = "IID", by.y = "indiv")
+
+
+blood_long <- pivot_longer(blood, cols = !indiv, names_to = "pval", values_to = "ptrs")
+blood_long$tissue <- "Whole Blood"
+
+nacc_long <- pivot_longer(nacc, cols = !indiv, names_to = "pval", values_to = "ptrs")
+nacc_long$tissue <- "Brain Nucleus Accumbens"
+
+cor_long <- pivot_longer(cor, cols = !indiv, names_to = "pval", values_to = "ptrs")
+cor_long$tissue <- "Brain Cortex"
+
+cer_long <- pivot_longer(cer, cols = !indiv, names_to = "pval", values_to = "ptrs")
+cer_long$tissue <- "Brain Cerebellum"
+
+blood$tissue <- "Whole Blood"
+nacc$tissue <- "Brain Nucleus Accumbens"
+cor$tissue <- "Brain Cortex"
+cer$tissue <- "Brain Cerebellum"
+
+merge1 <- rbind(blood_long, nacc_long)
+merge2 <- rbind(cor_long, cer_long)
+alldat <- rbind(merge1, merge2)
+
+blood_long$coef <- NA
+blood_long$pval_lm <- NA
+blood_long$se <- NA
+cer_long$coef <- NA
+cer_long$pval_lm <- NA
+cer_long$se <- NA
+cor_long$coef <- NA
+cor_long$pval_lm <- NA
+cor_long$se <- NA
+nacc_long$coef <- NA
+nacc_long$pval_lm <- NA
+nacc_long$se <- NA
+#pval_cols <- names(alldat_wide)
+#pval_cols <- pval_cols[! pval_cols %in% c('indiv', 'tissue')]
+```
+
+```{r}
+tissue_subset_df <- read.csv("tissue_subset_df.csv")
+for(i in 1:nrow(tissue_subset_df)){
+  t1 <- tissue_subset_df$tissue[i]
+  p1 <- tissue_subset_df$pval[i]
+  f <- paste("scale(smrt_score) ~ `", p1, "` + scale(age) + sex + PC1 + PC2 + PC3 + PC4 + PC5", sep = "")
+  if(t1 == "Whole Blood"){
+    df <- blood_phenos
+  } else if(t1 == "Brain Nucleus Accumbens"){
+    df <- nacc_phenos
+  } else if(t1 == "Brain Cortex"){
+    df <- cor_phenos
+  } else if(t1 == "Brain Cerebellum"){
+    df <- cer_phenos
+  }
+  myl <- glm(formula = f, data = df)
+  Coeff <- coef(myl)[2]
+  Coeff <- format(round(Coeff, 2), nsmall = 2)
+  pVal <- coef(summary(myl))[2,4]
+  se <- summary(myl)$coefficients[2, 2]
+  tissue_subset_df$coef[i] <- Coeff
+  tissue_subset_df$pval_lm[i] <- pVal
+  tissue_subset_df$se[i] <- se
+}
+```
+
+
+
+```{r}
+tissue_subset_df$tissue <- as.factor(tissue_subset_df$tissue)
+tissue_subset_df$coef <- as.numeric(tissue_subset_df$coef)
+tissue_subset_df$se <- as.numeric(tissue_subset_df$se)
+tissue_subset_df$pval_lm <- as.numeric(tissue_subset_df$pval_lm)
+
+g1 <-ggforestplot::forestplot(
+  df = tissue_subset_df,
+  name = pval,
+  se = se,
+  estimate = coef,
+  pvalue = pval_lm,
+  psignif = 0.05,
+  xlab = "\u03B2",
+  width = 500,
+  colour = tissue
+)
+
+pdf(file = "SMRT_PTRS_TissueSub_PvalThreshTest.pdf", height = 8)
+g1 +
+  ggtitle("Clapbeat PTRS Predicting \nRhythm Discrimination \nat various p-values", subtitle = "covariates: age, sex, 5 PCs") +
+  scale_color_discrete(labels = c("Whole Blood", "Brain Nucleus Accumbens", "Brain Cortex", "Brain Cerebellum"), type = brewer.pal(n=4, "Dark2")) +
+  labs(color = "Tissue")
+dev.off()
+```
+```{r}
+
+```
+
